@@ -37,6 +37,8 @@ except ImportError:
         def view(self, dtype): return Tensor(self.array.view(dtype))
         def reshape(self, *shape): return Tensor(self.array.reshape(*shape))
         def numpy(self): return self.array
+        def __getitem__(self, key): return Tensor(self.array[key])
+        def clone(self): return Tensor(self.array.copy())
     torch = types.ModuleType("torch")
     torch.Tensor = Tensor
     torch.float16 = np.dtype("float16")
@@ -166,10 +168,13 @@ class NodeRegistrationTests(unittest.TestCase):
             package = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = package
             self.addCleanup(lambda: [sys.modules.pop(key, None) for key in list(sys.modules) if key == spec.name or key.startswith(spec.name + ".")])
-            spec.loader.exec_module(package)
-            if not REAL_TORCH:
-                sys.modules[spec.name + ".scene_memory"].safe_open = sm.safe_open
-            self.assertEqual(set(package.NODE_CLASS_MAPPINGS), {"H3SceneMemorySave", "H3SceneMemoryLoad"})
+            from unittest.mock import patch
+            import comfy_stubs
+            with patch.dict(sys.modules, comfy_stubs.modules()):
+                spec.loader.exec_module(package)
+                if not REAL_TORCH:
+                    sys.modules[spec.name + ".scene_memory"].safe_open = sm.safe_open
+            self.assertEqual(set(package.NODE_CLASS_MAPPINGS), {"H3SceneMemorySave", "H3SceneMemoryLoad", "H3SceneMemoryReferenceToVideo"})
             Save = package.NODE_CLASS_MAPPINGS["H3SceneMemorySave"]
             Load = package.NODE_CLASS_MAPPINGS["H3SceneMemoryLoad"]
             original = {"samples": tensor(np.zeros((1, 24, 2, 4, 6)))}
