@@ -25,19 +25,33 @@ Files contain a single `video_latent` tensor and string metadata: format version
 
 The supported stage-one geometry is batch 1, 24 channels, `[1, 24, T, H/16, W/16]`, floating-point `float16`, `bfloat16`, or `float32`, even positive latent spatial dimensions, and H3's full-clip `T = 5k + 2` temporal grid. Frame count is inferred as `17k + 5` at 24 fps; this is the generated H3 frame count, not necessarily the number of frames in a separately trimmed/exported video. Output resolution is inferred from latent dimensions, not probed from a video file.
 
-## Apply a scene memory
+## Apply scene memory
 
-Replace only your **MiniMax H3 Reference to Video** node (node **#121** in the supplied workflow) with **MiniMax H3 Reference to Video + Scene Memory**. Reconnect its original CLIP, VAE, audio VAE, prompt, dimensions, image/video/audio reference inputs and its two original outputs exactly as before. Both `BasicGuider` inputs should receive its `positive` output, and its `LATENT` output should feed the original Stage 1 sampler. Then:
+Replace only **MiniMax H3 Reference to Video** (node **#121** in the supplied workflow) with **MiniMax H3 Reference to Video + Scene Memory**. Reconnect its original CLIP, video/audio VAE, prompt, dimensions, image/video/audio references and both outputs exactly as before. Feed `positive` to the existing guiders and `LATENT` to the Stage 1 sampler. Connect **Load Scene Memory** to `scene_memory`; optionally connect up to three more individually selected files to `scene_memory_2` through `scene_memory_4`. Only files you explicitly connect are combined: choose memories of the same scene yourself.
 
-1. Load a memory from an **earlier completed generation** using **Load Scene Memory**, and connect its `video_latent` to `scene_memory`.
-2. Set `enabled` to true. Set `memory_frame` to a frame index in the source video (zero-based, 24 fps). The node snaps down to the preceding 17-frame boundary and uses a five-frame/two-latent-step window; select a quiet window for dialogue when possible.
-3. Keep using the new shot's own prompt and audio inputs. The node assigns memory the next `<Video N>` number after existing video references and appends a short instruction identifying it as an earlier scene view.
+Set `enabled` to true. Each memory window is five source frames (two H3 latent steps), beginning at a multiple of 17 frames. Frame numbers are zero-based at 24 fps. The node snaps requested frames down to the nearest preceding boundary, removes duplicate windows, and displays the actual `file:frame` selections and warnings on the node after execution; they are also logged. The node does not yet include an image preview. A 243-frame H3 clip has 15 phase-aligned windows (0 through 238); the actual number is calculated from the saved latent.
 
-A video VAE is required with memory enabled: it decodes only the selected window for Qwen's visual presentation. The diffusion model receives the original, un-reencoded window as a video-only `minimax_refs` block. Existing reference order, audio references, keyframe metadata, output latent and sampler settings are preserved by delegating to the installed native H3 node. The original prompt is preserved and an instruction is appended in memory-enabled mode. The short Qwen presentation uses the first frame at the stock 2 fps sampling rate; the model receives both original temporal latent steps.
+| Memory Mode | Selection |
+| --- | --- |
+| Single | The existing `memory_frame` input selects one moment. |
+| Uniform | Spread windows across all explicitly connected files. |
+| Interval | Walk each source at `frame_interval` frames; 5, 10, 17, 34, 68 and other positive values are accepted. After snapping, duplicates are removed. |
+| Smart | Decode candidates and deterministically favor visual difference, edge structure, temporal spread and edge sharpness. Visually near-identical candidates are skipped. |
+| Manual | Use `manual_frames`, for example `0, 187` for file 1 or `1:0, 2:187` for specific inputs. |
 
-When `enabled` is false, the original H3 node is called directly, with its original inputs; the memory input is lazy and need not be connected or loaded. This release supports **one** selected memory window at a time, not a multi-view memory bank. H3 expects a compatible video VAE and H3/Qwen encoder. Shape checks cannot identify the actual model or VAE used to create the latent. Additional reference tokens increase computation and VRAM usage, especially with existing references and the second H3 sampler. Do not assume compatibility with third-party patches without testing your installed versions.
+`pinned_frames` uses the same syntax and takes priority in every mode. If pins exceed `max_references`, the requested count is increased to preserve them, subject to the multi-file safety cap. `max_references` is a target, not a promise: a source may have fewer distinct windows, and Smart can discard similar views. One file has no arbitrary 32-window cap. For multiple connected files this extension caps the combined result at **32**, removes byte-identical file/window duplicates and warns when the request or pins are truncated. This is an extension safeguard, **not a validated H3 reference limit**. Each input slot remains numbered even if an intermediate socket is unconnected.
 
-A short window reduces temporal context but cannot guarantee that camera movement, mouth positions, or old motion will not influence the new shot. The memory contains no audio; it does not guarantee speaker identity, scene geometry, dialogue, or lip-sync. Evaluate those properties on paired seeds in your own workflow.
+`memory_preset` sets the starting `max_references` when changed in the ComfyUI interface: Dialogue = 2, Balanced = 3, Geometry = 6, Detailed = 8 and Dense = 10. These are experimental starting points, not proven optima; edit `max_references` afterwards or select Custom. Selecting a multi-window preset while in Single mode also switches to Uniform; you can change the mode afterwards. API callers should set `max_references` explicitly: the preset changes the widget value in the frontend, not backend generation parameters. A new node defaults to Uniform with three windows; prior workflows retain Single and their `memory_frame`. When disabled, execution delegates to the original H3 node and lazy memory inputs are not needed.
+
+Example for a dialogue: choose **Dialogue**, set mode to **Smart**, pin `0`, and use a quiet source moment with neutral mouth positions when possible. For an interior, start with **Geometry** or **Detailed**, use **Uniform** or **Smart**, and pin an establishing view plus a frame with an important feature, e.g. `0, 187`. For views saved in separate files, use pins such as `1:0, 2:187`. These choices require A/B testing with your existing references and audio.
+
+Smart analyzes a small spatial grid only for its explainable color, contour, temporal-coverage and sharpness heuristics. It does **not** recognize characters, objects, geometry, camera pose or actual semantic usefulness; a different composition is only a proxy for a different view. Decodes are cached for the duration of one execution, so analysis and Qwen presentation do not decode the same selected window twice. New executions may decode again. No new neural model is used.
+
+The video VAE decodes each selected window for Qwen; at H3's 2 fps sampling rate, Qwen sees its first frame. DiT receives the corresponding original two-step latent, without re-encoding. Each memory becomes the next `<Video N>` after existing video references. The original prompt is preserved and a brief instruction is appended in enabled mode. The node does not modify the original H3 node, audio inputs, AV latent output, sampler settings or saved memory. Use the compatible H3 video VAE and Qwen encoder that created the source; shape checks cannot establish model or VAE identity.
+
+Each memory adds `2 × (latent_h/2) × (latent_w/2)` DiT visual rows, in addition to existing references, text, target video/audio and Qwen vision tokens. For example, at 864×480 this is about 810 rows per memory, before the other inputs. Warnings use heuristic thresholds and known reference-block geometry, not measured VRAM or a confirmed maximum context. Time, VRAM and attention cost increase, and third-party patch compatibility is not guaranteed; test your exact versions and hardware. No full-resolution reference is downscaled for generation.
+
+A short window reduces temporal context but cannot guarantee that camera movement, mouth positions or old motion will not influence the new shot. Memory carries no old audio, but it does not guarantee speaker identity, scene geometry, dialogue or lip-sync. Evaluate those properties on paired seeds in the target workflow.
 
 ## Tests
 
@@ -45,6 +59,7 @@ In an environment with ComfyUI's Python dependencies installed:
 
 ```bash
 python -m unittest discover -s tests -v
+node tests/frontend_check.cjs  # optional frontend contract check
 ```
 
 Apply tests use lightweight ComfyUI, Qwen and VAE doubles. Set `COMFYUI_H3_SOURCE` to the installed `comfy_extras/nodes_minimax_h3.py` to additionally exercise the official node method with doubles. Tests use real PyTorch when available, including a bit-exact bfloat16 test. If PyTorch is absent, the tests use a clearly identified NumPy tensor double with the real safetensors serializer; this exercises the file format but is **not** a substitute for running the tests with real PyTorch and an H3/ComfyUI workflow. No model is needed for the unit tests.

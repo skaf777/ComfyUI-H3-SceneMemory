@@ -59,13 +59,13 @@ class ApplyTests(unittest.TestCase):
 
     def test_schema_extends_original_without_changing_inputs_or_outputs(self):
         original = comfy_stubs.Core.define_schema(); new = self.Node.define_schema()
-        self.assertEqual([i.name for i in new.inputs[:-3]], [i.name for i in original.inputs])
+        self.assertEqual([i.name for i in new.inputs[:len(original.inputs)]], [i.name for i in original.inputs])
         self.assertEqual(new.outputs, original.outputs)
-        self.assertEqual([i.name for i in new.inputs[-3:]], ["enabled", "memory_frame", "scene_memory"])
-        self.assertTrue(new.inputs[-1].kwargs["lazy"])
+        self.assertEqual([i.name for i in new.inputs[len(original.inputs):len(original.inputs) + 3]], ["enabled", "memory_frame", "scene_memory"])
+        self.assertTrue(new.inputs[len(original.inputs) + 2].kwargs["lazy"])
         self.assertEqual(self.Node.check_lazy_status(False), [])
-        self.assertEqual(self.Node.check_lazy_status(True), ["scene_memory"])
-        self.assertEqual(self.Node.check_lazy_status(True, self.memory), [])
+        self.assertEqual(self.Node.check_lazy_status(True, scene_memory=None), ["scene_memory"])
+        self.assertEqual(self.Node.check_lazy_status(True, scene_memory=self.memory), [])
 
     def test_disabled_delegates_to_core_and_ignores_bad_memory(self):
         out = self.Node.execute(**self.args, enabled=False, scene_memory={"invalid": True}, memory_frame=-1)
@@ -170,6 +170,15 @@ class StockSourceContractTests(unittest.TestCase):
         self.assertEqual([i["type"] for i in self.clip.tokens["items"]], ["image", "audio", "video", "audio", "video"])
         self.assertEqual(refs[-1]["ref_audio_t"], 0)
         self.assertIn("<Video 2>", self.clip.tokens["prompt"])
+        result = self.Node.execute(**args, enabled=True, scene_memory=self.memory,
+                                   memory_mode="Uniform", max_references=2)
+        refs = result.args[0][0][1]["minimax_refs"]
+        self.assertEqual([r["kind"] for r in refs], ["image", "video_audio", "audio", "video", "video"])
+        self.assertEqual([i["type"] for i in self.clip.tokens["items"]],
+                         ["image", "audio", "video", "audio", "video", "video"])
+        self.assertIn("<Video 3>", self.clip.tokens["prompt"])
+        np.testing.assert_array_equal(refs[-2]["latent"].numpy(), self.video.numpy()[:, :, :2])
+        np.testing.assert_array_equal(refs[-1]["latent"].numpy(), self.video.numpy()[:, :, 5:7])
 
 
 if __name__ == "__main__": unittest.main(verbosity=2)

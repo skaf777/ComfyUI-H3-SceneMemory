@@ -4,7 +4,7 @@ import types
 
 
 class NodeOutput:
-    def __init__(self, *args): self.args = args
+    def __init__(self, *args, ui=None): self.args, self.ui = args, ui
 
 
 class Input:
@@ -61,7 +61,7 @@ class Core:
 
 
 def modules():
-    io = types.SimpleNamespace(ComfyNode=object, Boolean=InputType, Int=InputType, Latent=InputType, NodeOutput=NodeOutput)
+    io = types.SimpleNamespace(ComfyNode=object, Boolean=InputType, Int=InputType, Latent=InputType, Combo=InputType, String=InputType, NodeOutput=NodeOutput)
     api = types.ModuleType("comfy_api"); latest = types.ModuleType("comfy_api.latest"); latest.io = io
     extras = types.ModuleType("comfy_extras"); h3 = types.ModuleType("comfy_extras.nodes_minimax_h3")
     h3.MiniMaxH3ReferenceToVideo = Core; extras.nodes_minimax_h3 = h3
