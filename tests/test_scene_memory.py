@@ -32,7 +32,7 @@ except ImportError:
         @property
         def dtype(self): return self.array.dtype
         def detach(self): return self
-        def to(self, device=None, copy=False): return Tensor(self.array.copy() if copy else self.array)
+        def to(self, device=None, copy=False, dtype=None): return Tensor(self.array.astype(dtype, copy=copy) if dtype else (self.array.copy() if copy else self.array))
         def contiguous(self): return Tensor(np.ascontiguousarray(self.array))
         def view(self, dtype): return Tensor(self.array.view(dtype))
         def reshape(self, *shape): return Tensor(self.array.reshape(*shape))
