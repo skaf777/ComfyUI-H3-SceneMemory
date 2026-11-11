@@ -15,16 +15,29 @@ class TimelineTests(ApplyTests):
         self.other = {"samples": tensor(np.ones((1, 24, 7, 4, 6)))}
 
     def test_preview_cache_and_persisted_selection(self):
-        first = self.Timeline.execute(self.memory, self.vae, scene_memory_2=self.other)
+        first = self.Timeline.execute(self.memory, self.vae, scene_memory_2=self.other, preview_request="one")
         images = first['ui']['previews']
         self.assertEqual([(i['slot'], i['frame']) for i in images], [(1, 0), (1, 17), (2, 0), (2, 17)])
         self.assertEqual(len(self.vae.windows), 4)
         selection = {"version": 1, "items": [{k: images[1][k] for k in ('slot', 'frame', 'source')}]}
-        restored = self.Timeline.execute(self.memory, self.vae, selection=json.dumps(selection), scene_memory_2=self.other)
+        restored = self.Timeline.execute(self.memory, self.vae, selection=json.dumps(selection), scene_memory_2=self.other, preview_request="two")
         self.assertEqual(restored['result'][0], selection)
         self.assertEqual(len(self.vae.windows), 4)
-        stale = self.Timeline.execute(self.other, self.vae, selection=json.dumps(selection))
+        stale = self.Timeline.execute(self.other, self.vae, selection=json.dumps(selection), preview_request="three")
         self.assertTrue(stale['ui']['warning'])
+
+    def test_normal_execution_only_returns_selection_without_decoding_or_loading(self):
+        saved = {"version": 1, "items": [{"slot": 1, "frame": 17, "source": "saved"}]}
+        result = self.Timeline.execute(selection=json.dumps(saved))
+        self.assertEqual(result, (saved,))
+        self.assertEqual(self.vae.windows, [])
+        self.assertEqual(self.Timeline.check_lazy_status(scene_memory=None, vae=None), [])
+        self.assertEqual(self.Timeline.check_lazy_status(preview_request="button", scene_memory=None,
+                                                        vae=None, scene_memory_2=None),
+                         ["scene_memory", "vae", "scene_memory_2"])
+        # Supplying inputs during a regular graph execution must not decode either.
+        self.assertEqual(self.Timeline.execute(self.memory, self.vae, selection=json.dumps(saved)), (saved,))
+        self.assertEqual(self.vae.windows, [])
 
     def test_user_mode_passes_selected_windows_in_order_and_rejects_mismatch(self):
         sources = self.timeline.sources_from_memories((self.memory, self.other))

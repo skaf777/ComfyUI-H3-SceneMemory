@@ -35,6 +35,14 @@ app.registerExtension({
             const selection = this.widgets.find(w => w.name === "selection");
             selection.type = "hidden";
             selection.computeSize = () => [0, -4];
+            // This flag is injected into the isolated prompt only, never the workflow.
+            const request = this.widgets.find(w => w.name === "preview_request");
+            if (request) {
+                request.type = "hidden";
+                request.value = "";
+                request.computeSize = () => [0, -4];
+                request.serializeValue = () => "";
+            }
             const root = document.createElement("div");
             root.className = "h3-timeline";
             Object.assign(root.style, { background: "#20252a", color: "#eee", height: "100%", padding: "8px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "8px", overflow: "hidden" });
@@ -72,13 +80,21 @@ app.registerExtension({
                     const all = prompt.output; const id = String(node.id); const output = {};
                     const visit = current => { if (output[current]) return; const entry = all[current]; if (!entry) throw new Error(`Missing upstream node ${current}`); output[current] = entry; for (const value of Object.values(entry.inputs || {})) if (Array.isArray(value) && value.length === 2 && all[String(value[0])] && Number.isInteger(value[1])) visit(String(value[0])); };
                     visit(id);
+                    // Give each button press a unique cache key without changing the graph.
+                    output[id] = { ...output[id], inputs: { ...output[id].inputs,
+                        preview_request: `${Date.now()}-${Math.random()}` } };
                     await api.queuePrompt(0, { output, workflow: prompt.workflow });
                 } catch (error) { warning.textContent = `Preview failed: ${error.message || error}`; }
             });
             toolbar.append(count); root.append(toolbar, warning, strip);
             this.addDOMWidget("timeline", "div", root, { serialize: false, hideOnZoom: false });
             this.size = [Math.max(this.size[0], 520), Math.max(this.size[1], 340)];
-            this.h3TimelineUpdate = message => { previews = message?.previews || []; warning.textContent = (message?.warning || []).join(" "); render(); };
+            this.h3TimelineUpdate = message => {
+                if (!Array.isArray(message?.previews)) return;
+                previews = message.previews;
+                warning.textContent = (message.warning || []).join(" ");
+                render();
+            };
             render();
             return result;
         };
