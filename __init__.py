@@ -19,4 +19,14 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 WEB_DIRECTORY = "./web"
 
+# Routes are registered when loaded by ComfyUI; unit tests can import the
+# package without starting a server.
+try:
+    from server import PromptServer
+except ImportError:
+    PromptServer = None
+if PromptServer is not None and PromptServer.instance is not None:
+    from . import gallery
+    gallery.register_routes(PromptServer.instance.routes)
+
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

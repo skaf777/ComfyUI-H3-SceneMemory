@@ -12,6 +12,7 @@ import types
 import unittest
 
 import numpy as np
+from PIL import PngImagePlugin  # Keep Pillow's PNG plugin registered across module stubs.
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -184,7 +185,48 @@ class NodeRegistrationTests(unittest.TestCase):
             self.assertEqual(Load.INPUT_TYPES()["required"]["filename"][0], ["living_room.safetensors"])
             loaded, = Load().load("living_room.safetensors")
             np.testing.assert_array_equal(loaded["samples"].numpy(), original["samples"].numpy())
+            from test_apply import VideoVAE
+            vae = VideoVAE()
+            _, numbered = Save().save(original, "room", auto_numbering=True, vae=vae)
+            self.assertEqual(os.path.basename(numbered), "room_0001.safetensors")
+            self.assertEqual(len(vae.windows), 1)
+            self.assertEqual(vae.windows[0].shape[2], 2)
+            from PIL import Image
+            with Image.open(os.path.splitext(numbered)[0] + ".png") as preview:
+                self.assertEqual(preview.format, "PNG")
+                self.assertLessEqual(preview.width, 256)
+            _, failed_preview = Save().save(original, "failed", vae=VideoVAE(bad=True))
+            self.assertTrue(os.path.isfile(failed_preview))
+            self.assertFalse(os.path.exists(os.path.splitext(failed_preview)[0] + ".png"))
+            with patch.dict(sys.modules, comfy_stubs.modules()):
+                gallery = importlib.import_module(spec.name + ".gallery")
+                items = {item['filename']: item for item in gallery.entries(os.path.join(folder, 'scene_memory'))}
+            self.assertFalse(items['living_room.safetensors']['preview'])
+            self.assertEqual((items['room_0001.safetensors']['scene'], items['room_0001.safetensors']['take'], items['room_0001.safetensors']['preview']), ('room', '0001', True))
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class NumberingTests(unittest.TestCase):
+    setUp = StorageTests.setUp
+    def test_numbering_continues_from_disk_and_does_not_overwrite(self):
+        first = sm.save_memory(self.folder, 'Сцена [1].safetensors', self.latent, True)
+        before = pathlib.Path(first).read_bytes()
+        pathlib.Path(self.folder, 'Сцена [1]_0010.safetensors').write_bytes(b'old')
+        safe_open = sm.safe_open
+        try:
+            second = importlib.reload(sm).save_memory(self.folder, 'Сцена [1]', self.latent, True)
+        finally:
+            sm.safe_open = safe_open
+        self.assertEqual(os.path.basename(first), 'Сцена [1]_0001.safetensors')
+        self.assertEqual(os.path.basename(second), 'Сцена [1]_0011.safetensors')
+        self.assertEqual(pathlib.Path(first).read_bytes(), before)
+        self.assertEqual(pathlib.Path(self.folder, 'Сцена [1]_0010.safetensors').read_bytes(), b'old')
+
+    def test_concurrent_saves_are_unique(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            paths = list(pool.map(lambda _: sm.save_memory(self.folder, 'take', self.latent, True), range(20)))
+        self.assertEqual({os.path.basename(path) for path in paths},
+                         {f'take_{i:04}.safetensors' for i in range(1, 21)})

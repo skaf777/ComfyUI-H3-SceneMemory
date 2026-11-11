@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import tempfile
 
 import torch
@@ -78,7 +79,7 @@ def _metadata(video):
     }
 
 
-def save_memory(folder, filename, latent):
+def save_memory(folder, filename, latent, auto_numbering=False):
     if not isinstance(latent, dict) or "samples" not in latent:
         raise SceneMemoryError("Expected a ComfyUI LATENT with samples.")
     video = _validate_video(latent["samples"])
@@ -87,15 +88,24 @@ def save_memory(folder, filename, latent):
     meta = _metadata(video)
     os.makedirs(folder, exist_ok=True)
     path = _path(folder, filename)
+    stem = os.path.basename(path)[:-len('.safetensors')]
     fd, temporary = tempfile.mkstemp(prefix=".h3scene-", suffix=".tmp", dir=folder)
     os.close(fd)
     try:
         save_file({TENSOR_NAME: video}, temporary, metadata=meta)
         # Atomic publication without replacing an existing scene memory.
-        try:
-            os.link(temporary, path)
-        except FileExistsError as exc:
-            raise SceneMemoryError(f"Memory file already exists: {os.path.basename(path)}") from exc
+        while True:
+            if auto_numbering:
+                pattern = re.compile(r'^' + re.escape(stem) + r'_(\d{4,})\.safetensors$', re.IGNORECASE)
+                numbers = [int(match.group(1)) for name in os.listdir(folder)
+                           if (match := pattern.fullmatch(name))]
+                path = _path(folder, f"{stem}_{max(numbers, default=0) + 1:04d}.safetensors")
+            try:
+                os.link(temporary, path)
+                break
+            except FileExistsError as exc:
+                if not auto_numbering:
+                    raise SceneMemoryError(f"Memory file already exists: {os.path.basename(path)}") from exc
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

@@ -1,10 +1,35 @@
 """ComfyUI nodes for stage-one scene memory storage."""
 
 import os
+import logging
+import tempfile
+
+import numpy as np
+import torch
+from PIL import Image
 
 import folder_paths
 
 from .scene_memory import available_memories, file_fingerprint, load_memory, save_memory
+from .reference_node import _memory_window
+
+LOG = logging.getLogger("h3_scene_memory")
+
+
+def save_thumbnail(path, latent, vae):
+    presentation, _ = _memory_window(latent, vae, 0, validated=True)
+    pixels = presentation["data"][0].detach().to(device="cpu", dtype=torch.float32).numpy()
+    image = Image.fromarray((np.clip(pixels, 0, 1) * 255).astype(np.uint8), "RGB")
+    image.thumbnail((256, 2560), Image.Resampling.LANCZOS)
+    target = os.path.splitext(path)[0] + ".png"
+    fd, temporary = tempfile.mkstemp(prefix=".h3scene-preview-", suffix=".tmp", dir=os.path.dirname(path))
+    os.close(fd)
+    try:
+        image.save(temporary, format="PNG")
+        os.link(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def memory_folder():
@@ -17,6 +42,9 @@ class SaveSceneMemory:
         return {"required": {
             "video_latent": ("LATENT", {"tooltip": "Connect the video_latent output of Separate AV Latent after the Stage 1 H3 sampler."}),
             "filename": ("STRING", {"default": "scene_01", "tooltip": "Filename in output/scene_memory. Existing files are never overwritten."}),
+        }, "optional": {
+            "auto_numbering": ("BOOLEAN", {"default": False, "tooltip": "Save each take under the next available number."}),
+            "vae": ("VAE", {"tooltip": "Optional MiniMax H3 video VAE for a thumbnail."}),
         }}
 
     RETURN_TYPES = ("LATENT", "STRING")
@@ -25,8 +53,13 @@ class SaveSceneMemory:
     CATEGORY = "MiniMax H3/Scene Memory"
     OUTPUT_NODE = True
 
-    def save(self, video_latent, filename):
-        path = save_memory(memory_folder(), filename, video_latent)
+    def save(self, video_latent, filename, auto_numbering=False, vae=None):
+        path = save_memory(memory_folder(), filename, video_latent, auto_numbering=auto_numbering)
+        if vae is not None:
+            try:
+                save_thumbnail(path, video_latent, vae)
+            except Exception:
+                LOG.exception("Could not create thumbnail for %s; the scene memory was saved", path)
         return video_latent, path
 
 
