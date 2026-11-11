@@ -82,7 +82,7 @@ class MiniMaxH3ReferenceToVideoSceneMemory(io.ComfyNode):
             io.Boolean.Input("enabled", default=False, tooltip="Enable scene memory."),
             io.Int.Input("memory_frame", default=0, min=0, max=3600, tooltip="Single mode: source frame, snapped down to the 17-frame grid."),
             io.Latent.Input("scene_memory", optional=True, lazy=True, tooltip="First Load Scene Memory output."),
-            io.Combo.Input("memory_mode", options=list(MODES), default="Uniform", optional=True),
+            io.Combo.Input("memory_mode", options=[*MODES, "User"], default="Uniform", optional=True),
             io.Combo.Input("memory_preset", options=[*PRESETS, "Custom"], default="Balanced", optional=True,
                            tooltip="Selecting a preset changes Max References; you can edit it afterwards."),
             io.Int.Input("max_references", default=3, min=1, max=2147483647, optional=True),
@@ -91,6 +91,7 @@ class MiniMaxH3ReferenceToVideoSceneMemory(io.ComfyNode):
             io.String.Input("pinned_frames", default="", optional=True, tooltip="Priority frames, e.g. 0, 187 or 1:0, 2:187."),
             *[io.Latent.Input(name, optional=True, lazy=True, tooltip="Optional additional Load Scene Memory output, explicitly chosen for this scene.")
               for name in MEMORY_INPUTS[1:]],
+            io.Custom("USER_SELECTION").Input("user_selection", optional=True, lazy=True),
         ])
         return schema
 
@@ -100,14 +101,17 @@ class MiniMaxH3ReferenceToVideoSceneMemory(io.ComfyNode):
             return []
         # Only connected lazy inputs appear in kwargs with None. Do not request
         # absent optional sockets: ComfyUI cannot make a missing link strong.
-        return [name for name in MEMORY_INPUTS if name in kwargs and kwargs[name] is None]
+        names = list(MEMORY_INPUTS)
+        if kwargs.get("memory_mode") == "User":
+            names.append("user_selection")
+        return [name for name in names if name in kwargs and kwargs[name] is None]
 
     @classmethod
     def execute(cls, clip, prompt, width, height, length, ref_image_size="match", vae=None, audio_vae=None,
                 ref_images=None, ref_videos=None, ref_video_audios=None, ref_audios=None,
                 enabled=False, memory_frame=0, scene_memory=None, memory_mode="Single", memory_preset="Custom",
                 max_references=3, frame_interval=17, manual_frames="", pinned_frames="",
-                scene_memory_2=None, scene_memory_3=None, scene_memory_4=None):
+                scene_memory_2=None, scene_memory_3=None, scene_memory_4=None, user_selection=None):
         core_args = dict(clip=clip, prompt=prompt, width=width, height=height, length=length,
                          ref_image_size=ref_image_size, vae=vae, audio_vae=audio_vae,
                          ref_images=ref_images, ref_videos=ref_videos,
@@ -139,8 +143,15 @@ class MiniMaxH3ReferenceToVideoSceneMemory(io.ComfyNode):
         def render(key):
             frame = get_window(key)[0]["data"][0]
             return frame.detach().to(device="cpu", dtype=torch.float32).numpy()
-        selected, warnings = select(sources, memory_mode, max_references, memory_frame, frame_interval,
-                                    manual_frames, pinned_frames, render)
+        if memory_mode == "User":
+            if user_selection is None:
+                raise SceneMemoryError("User mode requires a connected Scene Memory Timeline USER_SELECTION output.")
+            from .timeline import selection_for_sources
+            selected = selection_for_sources(user_selection, [(slot, video, identity[2]) for slot, video, identity in sources])
+            warnings = []
+        else:
+            selected, warnings = select(sources, memory_mode, max_references, memory_frame, frame_interval,
+                                        manual_frames, pinned_frames, render)
         if not selected:
             raise SceneMemoryError("No scene-memory windows were selected.")
         # This counts DiT video patch rows only; Qwen and existing refs cost extra.

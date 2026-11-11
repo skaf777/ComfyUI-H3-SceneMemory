@@ -174,7 +174,7 @@ class NodeRegistrationTests(unittest.TestCase):
                 spec.loader.exec_module(package)
                 if not REAL_TORCH:
                     sys.modules[spec.name + ".scene_memory"].safe_open = sm.safe_open
-            self.assertEqual(set(package.NODE_CLASS_MAPPINGS), {"H3SceneMemorySave", "H3SceneMemoryLoad", "H3SceneMemoryReferenceToVideo"})
+            self.assertEqual(set(package.NODE_CLASS_MAPPINGS), {"H3SceneMemorySave", "H3SceneMemoryLoad", "H3SceneMemoryReferenceToVideo", "H3SceneMemoryTimeline"})
             Save = package.NODE_CLASS_MAPPINGS["H3SceneMemorySave"]
             Load = package.NODE_CLASS_MAPPINGS["H3SceneMemoryLoad"]
             original = {"samples": tensor(np.zeros((1, 24, 2, 4, 6)))}

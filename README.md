@@ -67,3 +67,13 @@ Apply tests use lightweight ComfyUI, Qwen and VAE doubles. Set `COMFYUI_H3_SOURC
 ## Design references
 
 The video-only original-latent approach follows the architecture described in [H3 Continuity Studio Visual Memory](https://github.com/KadoBOT/ComfyUI-H3-Continuity-Studio/blob/e6a37dcf36d9be541a5cbde0667720836e51b615/guide/continuity/visual-memory.md). The separated AV safetensors and metadata pattern was informed by [OBVPM MCtx](https://github.com/chanon/comfyui-obvpm-timeline/blob/068a97b4786daef8d67277fe323297fb86d54a3f/mctx.py). This repository implements its own scene-memory format and does not copy OBVPM source or claim `.mctx.safetensors` compatibility.
+
+## Visual timeline (Scene Memory 3.0)
+
+Add **Scene Memory Timeline** and connect the same **Load Scene Memory** output to its `scene_memory` and the main H3 node's `scene_memory`. Connect the MiniMax H3 video VAE to the timeline. For multiple files, connect the same files to matching numbered slots on both nodes (up to four). Connect `USER_SELECTION` to the main node's `user_selection`, enable memory and choose **User** in `memory_mode`.
+
+Click **Refresh Previews** to queue the timeline and its upstream inputs only; this does not queue the H3 generation branch or samplers. Thumbnails represent complete H3 windows on the 17-frame grid. The preview interval defaults to 17; custom intervals round up to the next multiple of 17. Click thumbnails to toggle them, or use **Select All** and **Clear Selection**. Resize the node and scroll horizontally for long memories. The saved workflow stores source hashes, slot numbers and selected frames, not the images; refresh previews after reopening. A changed or mismatched source produces a warning, and User mode refuses to run until the selection matches. Clear and select again when intentionally replacing a source.
+
+User mode uses every selected unique window, regardless of the preset, maximum, pins or the multi-file safeguard used by automatic modes. Identical windows from identical source content are sent only once. Each original latent window goes to DiT, and its decoded first frame goes to Qwen. No latent is re-encoded. Other modes retain their existing selection rules and do not require a timeline connection. Cached small previews are kept in process memory (up to 512) and are rebuilt after restart; each window is decoded separately. Selecting many windows may substantially increase inference time and memory use.
+
+Run the frontend contract checks with `node tests/frontend_check.cjs` and `node tests/timeline_frontend.cjs`. These and the Python tests use doubles and do not replace testing with a real ComfyUI installation and H3 VAE.
