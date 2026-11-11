@@ -15,7 +15,7 @@ Connect the **video_latent** output of **Separate AV Latent** after the first H3
 
 Enter a scene name such as `Airlock_Corridor`, enable **auto_numbering**, and run the graph. Each execution saves the next take in `ComfyUI/output/scene_memory`, for example `Airlock_Corridor_0001.safetensors`, then `Airlock_Corridor_0002.safetensors`. Numbering continues from existing files after a restart and concurrent saves cannot overwrite each other. `saved_path` is the full path of the file created; `video_latent` passes through unchanged. Names must be single filenames without path separators.
 
-Optionally connect the MiniMax H3 video **vae** to save a matching PNG thumbnail. Only the first two latent steps are decoded and the first frame is reduced to at most 256 pixels wide; no sampler runs. Without a VAE no thumbnail is made. If thumbnail generation fails, the memory is still saved and the error is logged. Audio is not saved.
+Optionally connect the MiniMax H3 video **vae** to save a matching PNG thumbnail. The node automatically chooses an H3 window near the middle of the video (or the first window for very short videos), decodes only its two latent steps, and reduces its first frame to at most 256 pixels wide; no sampler runs. Without a VAE no thumbnail is made. If thumbnail generation fails, the memory is still saved and the error is logged. Audio is not saved.
 
 With **auto_numbering** off (the default for existing workflows), the original filename behavior is preserved: `room_take_01` saves `room_take_01.safetensors`, and an existing file causes an error. Use a new filename or enable numbering for subsequent runs. Existing memories are never overwritten.
 

@@ -191,6 +191,14 @@ class NodeRegistrationTests(unittest.TestCase):
             self.assertEqual(os.path.basename(numbered), "room_0001.safetensors")
             self.assertEqual(len(vae.windows), 1)
             self.assertEqual(vae.windows[0].shape[2], 2)
+            for steps, start in ((2, 0), (7, 0), (12, 5), (17, 10), (22, 10)):
+                values = np.broadcast_to(np.arange(steps, dtype=np.float32)[None, None, :, None, None], (1, 24, steps, 4, 6)).copy()
+                sample = {"samples": tensor(values)}
+                probe = VideoVAE()
+                Save().save(sample, f"middle_{steps}", vae=probe)
+                self.assertEqual(len(probe.windows), 1)
+                np.testing.assert_array_equal(probe.windows[0].numpy(), values[:, :, start:start + 2])
+                np.testing.assert_array_equal(sample['samples'].numpy(), values)
             from PIL import Image
             with Image.open(os.path.splitext(numbered)[0] + ".png") as preview:
                 self.assertEqual(preview.format, "PNG")

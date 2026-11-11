@@ -17,7 +17,11 @@ LOG = logging.getLogger("h3_scene_memory")
 
 
 def save_thumbnail(path, latent, vae):
-    presentation, _ = _memory_window(latent, vae, 0, validated=True)
+    intervals = (latent["samples"].shape[2] - 2) // 5
+    # Two windows or fewer are very short; use the first in that case.
+    # Otherwise choose the grid point nearest the video's midpoint.
+    frame = 0 if intervals <= 1 else 17 * ((intervals + 1) // 2)
+    presentation, _ = _memory_window(latent, vae, frame, validated=True)
     pixels = presentation["data"][0].detach().to(device="cpu", dtype=torch.float32).numpy()
     image = Image.fromarray((np.clip(pixels, 0, 1) * 255).astype(np.uint8), "RGB")
     image.thumbnail((256, 2560), Image.Resampling.LANCZOS)
